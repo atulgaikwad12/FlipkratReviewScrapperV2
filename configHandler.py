@@ -14,10 +14,6 @@ class configHandler:
             write_config = cp.ConfigParser()
 
             write_config.add_section("mongodb")
-            # write_config.set("mongodb", "dbserver", "mongodb://localhost:27017/")
-            write_config.set("mongodb", "CONN_URL", "mongodb+srv://atul:atul1234@cluster0.sdsky.mongodb.net/myFirstDatabase?retryWrites=true&w=majority")
-            write_config.set("mongodb", "USER", "atul")
-            write_config.set("mongodb", "PASSWD","atul1234")
             write_config.set("mongodb", "DB_NAME", "Flipkart-Scrapper")
 
             write_config.add_section("cassandra")

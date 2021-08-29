@@ -9,21 +9,26 @@ from selenium.webdriver.support.wait import WebDriverWait
 from RepositoryForObject import ObjectRepository
 from selenium.webdriver.common.by import By
 import pandas as pd
-
+import cassandraOps as dbops
+import os
+import configHandler as cfg
 from mongoDBOperations import MongoDBManagement
-import cassandraOps
 
 class FlipkratScrapper:
 
-    def __init__(self, executable_path, chrome_options):
+    def __init__(self, executable_path, chrome_options,clg):
         """
         This function initializes the web browser driver
         :param executable_path: executable path of chrome driver.
         """
         try:
+            self.clg = clg
+
+            self.clg.log("executable_path => ",executable_path)
+            self.clg.log("chrome_options =>",chrome_options)
             self.driver = webdriver.Chrome(executable_path=executable_path, chrome_options=chrome_options)
         except Exception as e:
-            raise Exception(f"(__init__): Something went wrong on initializing the webdriver object.\n" + str(e))
+            raise Exception(f"(FlipkratScrapper __init__): Something went wrong on initializing the webdriver object.\n" + str(e))
 
     def waitExplicitlyForCondition(self, element_to_be_found):
         """
@@ -566,14 +571,32 @@ class FlipkratScrapper:
         except Exception as e:
             raise Exception(f"(createDataFrame) - Something went wrong on creating data frame.\n" + str(e))
 
-    def saveDataFrameToFile(self, dataframe, file_name):
+    def saveDataFrameToFile(self, dataframe, file_path):
         """
         This function saves dataframe into filename given
         """
         try:
-            dataframe.to_csv(file_name)
+            self.flushDirectoryFiles(file_path)
+            dataframe.to_csv(file_path)
         except Exception as e:
             raise Exception(f"(saveDataFrameToFile) - Unable to save data to the file.\n" + str(e))
+
+    def flushDirectoryFiles(self,file_path):
+        """
+        will derive if file path passed and then delete all files from that directory
+        :return:
+        """
+        try:
+            ch = cfg.configHandler("config.ini")
+            output_folder = ch.readConfigOptions("output", "directory")
+            if os.path.exists(output_folder):
+                directory = os.path.dirname(file_path)
+                for f in os.listdir(directory):
+                    os.remove(os.path.join(directory, f))
+
+                self.clg.log("(flushDirectoryFiles) Removed all files from "+str(directory))
+        except Exception as e:
+            self.clg.log('(flushDirectoryFiles) failed - {}'.format(e),"ERROR")
 
     def closeConnection(self):
         """
@@ -584,13 +607,14 @@ class FlipkratScrapper:
         except Exception as e:
             raise Exception(f"(closeConnection) - Something went wrong on closing connection.\n" + str(e))
 
-    def getReviewsToDisplay(self, searchString, expected_review, username, password, review_count):
+    # def getReviewsToDisplay(self, searchString, expected_review, username, password, review_count):
+    def getReviewsToDisplay(self, searchString, expected_review, review_count, dbConn=None):
         """
         This function returns the review and other details of product
         """
         try:
             search = searchString
-            mongoClient = MongoDBManagement(username=username, password=password)
+            # mongoClient = MongoDBManagement(username=username, password=password)
             locator = self.getLocatorsObject()
             for link in self.getProductLinks():
                 print('reviewing: ' + str(review_count))
@@ -599,14 +623,21 @@ class FlipkratScrapper:
                     if locator.getCustomerName() in self.driver.page_source:
                         product_name = self.getProductName()
                         print(product_name)
-                        db_search = mongoClient.findfirstRecord(db_name="Flipkart-Scrapper",
-                                                                collection_name=searchString,
-                                                                query={'product_name': product_name})
-                        print(db_search)
-                        if db_search is not None:
-                            print("Yes present" + str(len(db_search)))
-                            continue
-                        print("False")
+
+                        if dbConn is None:
+                            dbConn = dbops.cassandraOps(self.clg)  # Cassandra
+
+                        if review_count > 0:
+                            # db_search = mongoClient.findfirstRecord(db_name="Flipkart-Scrapper",collection_name=searchString,query={'product_name': product_name})
+                            whereQry = "product_name= '"+ product_name + "'"
+                            db_search = dbConn.findRecordWhere(table_name=searchString,top=1,where=whereQry)
+                            print(db_search)
+                            if db_search is not None:
+                                print("Yes present" + str(len(db_search)))
+                                continue
+
+                        print("False Product " +product_name + "Not Found")
+
                         product_searched = self.getProductSearched(search_string=searchString)
                         price = self.getPrice()
                         offer_details = self.getOfferDetails()
@@ -627,19 +658,25 @@ class FlipkratScrapper:
                             if len(ratings) > 0:
                                 for i in range(0, len(ratings)):
                                     if review_count > expected_review: return search
-                                    result = {'product_name': product_name,
-                                              'product_searched': product_searched,
-                                              'price': price,
-                                              'offer_details': offer_details,
-                                              'discount_percent': discount_percent,
-                                              'EMI': EMI,
-                                              'rating': ratings[i],
-                                              'comment': comment[i],
-                                              'customer_name': customer_name[i],
-                                              'review_age': review_age[i]}
-                                    mongoClient.insertRecord(db_name="Flipkart-Scrapper",
-                                                             collection_name=searchString,
-                                                             record=result)
+
+                                    result = {"product_name": product_name,
+                                              "product_searched": product_searched,
+                                              "price": price,
+                                              "offer_details": offer_details,
+                                              "discount_percent": discount_percent,
+                                              "EMI": EMI,
+                                              "rating": ratings[i],
+                                              "comment": comment[i],
+                                              "customer_name": customer_name[i],
+                                              "review_age": review_age[i]}
+
+                                    # mongoClient.insertRecord(db_name="Flipkart-Scrapper",
+                                    #                          collection_name=searchString,
+                                    #                          record=result)
+
+                                    if dbConn is not None:
+                                        dbConn.saveDictDataIntoTable(table_name=searchString,data_dict=result)
+
                                     print(result)
                                     review_count = review_count + 1
                                     print(review_count)

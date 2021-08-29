@@ -88,7 +88,7 @@ class customLogger:
 
         try:
 
-            rotating_handler = lg.handlers.RotatingFileHandler(self.file_name, mode='w',maxBytes=int(self.max_bytes), backupCount=int(self.backup_count), encoding=None,delay=False)
+            rotating_handler = lg.handlers.RotatingFileHandler(self.file_name, mode='w',maxBytes=int(self.max_bytes), backupCount=int(self.backup_count), encoding="utf-8",delay=False)
             rotating_handler.setFormatter(self.log_formatter)
 
             # Uncomment to create new log file on each run and save old one in rotating manner
@@ -112,7 +112,7 @@ class customLogger:
         """
         try:
 
-            rotating_handler2 = RotatingFileHandler(self.file_name2, maxBytes=int(self.max_bytes), backupCount=int(self.backup_count))
+            rotating_handler2 = RotatingFileHandler(self.file_name2, maxBytes=int(self.max_bytes), backupCount=int(self.backup_count),encoding="utf-8")
             rotating_handler2.setFormatter(self.log_formatter)
 
             if self.level2 == "DEBUG":
